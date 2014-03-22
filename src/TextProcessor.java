@@ -1,22 +1,18 @@
 import java.io.BufferedReader;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.StringTokenizer;
 
 import vn.hus.nlp.tokenizer.VietTokenizer;
 import jvntagger.MaxentTagger;
@@ -30,35 +26,16 @@ import com.google.gson.Gson;
  */
 public class TextProcessor {
 	private static final String CSV_FILENAME = "baomoi.tsv";
-	private String contentFileName = getContentFileName();
-	private String outputFileName = getOutputFileName();
-	private static final String TOKEN_FILENAME = "TokenFile.txt";
-	private static final String TAGGED_FILENAME = "TaggedFile.txt";
-
-	public ArrayList<String> lines = new ArrayList<String>();
-	// public ArrayList<String> terms = new ArrayList<String>();
-	public Hashtable<String, ArrayList<String>> termsPerLine = new Hashtable<>();
+	private String contentFileName;
+	private String outputFileName;
 	public Map<String, Integer> verbTable = new HashMap<String, Integer>();
 
-	public TextProcessor(String filename) throws IOException {
-		BufferedReader br = new BufferedReader(new FileReader(filename));
-		String currentLine;
-		while ((currentLine = br.readLine()) != null) {
-			if (!currentLine.equals("\n"))
-				lines.add(currentLine);
-		}
-		for (int i = 0; i < lines.size(); i++) {
-			ArrayList<String> terms = new ArrayList<String>();
-			StringTokenizer token = new StringTokenizer(lines.get(i), "\t");
-			while (token.hasMoreTokens()) {
-				terms.add(token.nextToken());
-			}
-			termsPerLine.put(lines.get(i), terms);
-		}
-		br.close();
+	public TextProcessor() {
+		contentFileName = getContentFileName();
+		outputFileName = getOutputFileName();
 	}
 
-	//Tạo tên file lưu các content
+	// Tạo tên file lưu các content
 	private String getContentFileName() {
 		String fileName;
 		DateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
@@ -68,7 +45,7 @@ public class TextProcessor {
 		return fileName;
 	}
 
-	//Tạo tên file output
+	// Tạo tên file output
 	private String getOutputFileName() {
 		String fileName;
 		DateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
@@ -78,71 +55,70 @@ public class TextProcessor {
 		return fileName;
 	}
 
-	//Tách các content lưu vào file content
+	// Tách các content lưu vào file content
 	public void contentParser() throws IOException {
 		PrintWriter output = new PrintWriter(contentFileName);
-		for (int i = 0; i < termsPerLine.size(); i++) {
-			ArrayList<String> terms = (termsPerLine.get(lines.get(i)));
-			String json = terms.get(3);
-			Article art = new Article();
-			Gson gson = new Gson();
-			art = gson.fromJson(json, Article.class);
-			output.println(art.getContent().replaceAll("\n", ""));
-		}
-		output.close();
-	}
-
-	//Tách các content thành các token, lưu vào file Token
-	public void tokenizerWords() throws IOException {
-		VietTokenizer tokenizer = new VietTokenizer();
-		tokenizer.tokenize(contentFileName, TOKEN_FILENAME);
-	}
-
-	//Đánh tag các token trong file token, lưu vào file tagged
-	public void tagWords() throws IOException {
-		BufferedReader br = new BufferedReader(new FileReader(TOKEN_FILENAME));
-		PrintWriter pw = new PrintWriter(TAGGED_FILENAME);
-		String modelDir = "model/maxent";
-		POSTagger tagger = null;
-		tagger = new MaxentTagger(modelDir);
-		String resultStr;
+		BufferedReader br = new BufferedReader(new FileReader(CSV_FILENAME));
 		String currentLine;
-
+		String[] tokens = null;
+		String content;
 		while ((currentLine = br.readLine()) != null) {
 			if (!currentLine.equals("\n")) {
-				resultStr = tagger.tagging(currentLine.toLowerCase());
-				pw.println(resultStr);
+				tokens = currentLine.split("\t");
+				String json = tokens[3];
+				Article art = new Article();
+				Gson gson = new Gson();
+				art = gson.fromJson(json, Article.class);
+				content = art.getContent();
+				content = content.replace("\n", "");
+				content = content.replace("<strong>", "");
+				content = content.replace("</strong>", "");
+				content = content.replace("\t", "");
+				output.println(content);
 			}
 		}
 		br.close();
-		pw.close();
+		output.close();
 	}
 
-	//Lưu các động từ trong file tagged vào Hashmap + đếm số lần xuất hiện
-	public void filterVerbWords() throws IOException {
-		BufferedReader br = new BufferedReader(new FileReader(TAGGED_FILENAME));
+	// Lưu các động từ vào Hashmap + đếm số lần xuất hiện
+	public void creatVerbTable() throws IOException {
+		VietTokenizer tokenizer = new VietTokenizer();
+		String modelDir = "model/maxent";
+		POSTagger tagger = null;
+		tagger = new MaxentTagger(modelDir);
 		String currentLine;
+		String sentence;
+		String taggedSentence;
+		String[] taggedWords;
+		BufferedReader br = new BufferedReader(new FileReader(contentFileName));
+
 		while ((currentLine = br.readLine()) != null) {
-			StringTokenizer token = new StringTokenizer(currentLine, " ");
-			while (token.hasMoreTokens())
-				lines.add(token.nextToken());
-		}
-		for (int i = 0; i < lines.size(); i++) {
-			String term = lines.get(i);
-			if (term.endsWith("/V")) {
-				String verb = term.substring(0, term.length() - 2);
-				verb = verb.replaceAll("_", " ");
-				if (verbTable.containsKey(verb)) {
-					verbTable.put(verb, verbTable.get(verb) + 1);
-				} else {
-					verbTable.put(verb, 1);
+			if (!currentLine.equals("\n")) {
+				sentence = tokenizer.segment(currentLine); // Tách content
+				taggedSentence = tagger.tagging(sentence.toLowerCase()); // Đánh
+																			// tag
+
+				taggedWords = taggedSentence.split(" ");
+
+				for (int i = 0; i < taggedWords.length; i++) {
+					String word = taggedWords[i];
+					if (word.endsWith("/V")) {
+						String verb = word.substring(0, word.length() - 2);
+						verb = verb.replace("_", " ");
+						if (verbTable.containsKey(verb)) {
+							verbTable.put(verb, verbTable.get(verb) + 1);
+						} else {
+							verbTable.put(verb, 1);
+						}
+					}
 				}
 			}
 		}
 		br.close();
 	}
 
-	//In 30 động từ xuất hiện nhiều nhất vào file output 
+	// In 30 động từ xuất hiện nhiều nhất vào file output
 	public void printVerbArray() throws IOException {
 		PrintWriter pw = new PrintWriter(outputFileName);
 		Map<String, Integer> sortedVerbTable = sortByValues(verbTable);
@@ -158,7 +134,8 @@ public class TextProcessor {
 		pw.close();
 	}
 
-	//Chuyển các từ theo định dạng được yêu cầu (viết hoa chữ cái đầu mỗi tiếng)
+	// Chuyển các từ theo định dạng được yêu cầu (viết hoa chữ cái đầu mỗi
+	// tiếng)
 	private String processWord(String originalWord) {
 		StringBuilder changedWord = new StringBuilder(originalWord);
 		char ch = changedWord.charAt(0);
@@ -171,7 +148,7 @@ public class TextProcessor {
 		return changedWord.toString();
 	}
 
-	//Hàm sắp xếp Hashmap
+	// Hàm sắp xếp Hashmap
 	/*
 	 * Java method to sort Map in Java by value e.g. HashMap or Hashtable throw
 	 * NullPointerException if Map contains null values It also sort values even
@@ -205,12 +182,10 @@ public class TextProcessor {
 	 * Launch the application.
 	 */
 	public static void main(String[] args) throws Exception {
+		TextProcessor tp = new TextProcessor();
 
-		TextProcessor tp = new TextProcessor(CSV_FILENAME);
-		tp.contentParser();//Tách content từ file TSV
-		tp.tokenizerWords();//Tách content thành các từ
-		tp.tagWords();//Đánh tag các từ vừa tách
-		tp.filterVerbWords();//Lọc các động từ đưa vào bảng hash
-		tp.printVerbArray();//In 30 động từ xuất hiện nhiều nhất ra file output
+		tp.contentParser();
+		tp.creatVerbTable();
+		tp.printVerbArray();
 	}
 }
